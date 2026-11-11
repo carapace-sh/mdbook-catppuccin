@@ -8,7 +8,9 @@ use std::process::Command;
 const CATPPUCCIN_CSS_URL: &str =
     "https://github.com/catppuccin/mdBook/releases/latest/download/catppuccin.css";
 
-const THEME_JS: &str = r##"(function() {
+const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
+<script>
+(function() {
   if (window.__mdbookCatppuccinInit) return;
   window.__mdbookCatppuccinInit = true;
 
@@ -23,22 +25,7 @@ const THEME_JS: &str = r##"(function() {
     };
   }
 
-  function getPopup() {
-    return document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
-  }
-
-  function getToggle() {
-    return document.getElementById("mdbook-theme-toggle") || document.getElementById("theme-toggle");
-  }
-
-  function hidePopup() {
-    var popup = getPopup();
-    var toggle = getToggle();
-    if (popup) { popup.style.display = "none"; }
-    if (toggle) { toggle.setAttribute("aria-expanded", "false"); }
-  }
-
-  function applyTheme(theme) {
+  function applyCatppuccinTheme(theme) {
     var html = document.documentElement;
     var previous = null;
     try { previous = localStorage.getItem("mdbook-theme"); } catch (e) {}
@@ -49,26 +36,27 @@ const THEME_JS: &str = r##"(function() {
 
     var s = getStylesheets();
     if (s.ayuHighlight && s.tomorrowNight && s.highlight) {
-      var dark = theme === "coal" || theme === "navy" || theme === "ayu" ||
-        (catppuccin.indexOf(theme) !== -1 && theme !== "latte");
+      var dark = theme !== "latte";
       s.ayuHighlight.disabled = dark;
       s.tomorrowNight.disabled = !dark;
       s.highlight.disabled = dark;
     }
 
-    var popup = getPopup();
+    var popup = document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
     if (popup) {
       popup.querySelectorAll(".theme-selected").forEach(function(el) {
         el.classList.remove("theme-selected");
       });
-      var sel = document.getElementById("mdbook-theme-" + theme) || document.getElementById("theme-" + theme);
+      var sel = document.getElementById("mdbook-theme-" + theme);
       if (sel) { sel.classList.add("theme-selected"); }
+      popup.style.display = "none";
     }
-    hidePopup();
+    var toggle = document.getElementById("mdbook-theme-toggle");
+    if (toggle) { toggle.setAttribute("aria-expanded", "false"); }
   }
 
   function addCatppuccinThemes() {
-    var list = getPopup();
+    var list = document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
     if (!list) return;
     for (var i = 0; i < catppuccin.length; i++) {
       (function(theme) {
@@ -77,16 +65,16 @@ const THEME_JS: &str = r##"(function() {
         var li = document.createElement("li");
         li.setAttribute("role", "none");
         var btn = document.createElement("button");
-        btn.setAttribute("role", "menuitem");
         btn.type = "button";
+        btn.setAttribute("role", "menuitem");
         btn.className = "theme";
         btn.id = id;
         btn.textContent = labels[theme];
         btn.addEventListener("click", function(e) {
           e.preventDefault();
           e.stopPropagation();
-          applyTheme(theme);
-        });
+          applyCatppuccinTheme(theme);
+        }, true);
         li.appendChild(btn);
         list.appendChild(li);
       })(catppuccin[i]);
@@ -95,11 +83,10 @@ const THEME_JS: &str = r##"(function() {
 
   function init() {
     addCatppuccinThemes();
-
     var current = null;
     try { current = localStorage.getItem("mdbook-theme"); } catch (e) {}
     if (current && catppuccin.indexOf(current) !== -1) {
-      applyTheme(current);
+      applyCatppuccinTheme(current);
     }
   }
 
@@ -109,11 +96,7 @@ const THEME_JS: &str = r##"(function() {
     init();
   }
 })();
-"##;
-
-const HEAD_HBS: &str = r##"<!-- mdbook-catppuccin -->
-<link rel="stylesheet" href="{{ resource "theme/catppuccin.css" }}">
-<script defer src="{{ resource "theme/catppuccin.js" }}"></script>
+</script>
 "##;
 
 fn main() {
@@ -127,17 +110,19 @@ fn main() {
     let parsed: Value = serde_json::from_str(&input).unwrap();
     let arr = parsed.as_array().unwrap();
     let ctx = &arr[0];
-    let book = &arr[1];
+    let mut book = arr[1].clone();
 
     let root = ctx.get("root").and_then(|v| v.as_str()).unwrap_or("");
     if !root.is_empty() {
-        ensure_assets(root);
+        ensure_css(root);
     }
 
-    println!("{}", serde_json::to_string(book).unwrap());
+    process_book(&mut book);
+
+    println!("{}", serde_json::to_string(&book).unwrap());
 }
 
-fn ensure_assets(root: &str) {
+fn ensure_css(root: &str) {
     let theme_dir = Path::new(root).join("theme");
     if let Err(e) = fs::create_dir_all(&theme_dir) {
         eprintln!("mdbook-catppuccin: {}", e);
@@ -145,62 +130,59 @@ fn ensure_assets(root: &str) {
     }
 
     let css_path = theme_dir.join("catppuccin.css");
-    if !css_path.exists() {
-        let status = Command::new("curl")
-            .args(["-fsSL", "-o"])
-            .arg(&css_path)
-            .arg(CATPPUCCIN_CSS_URL)
-            .status();
-        match status {
-            Ok(s) if s.success() => {}
-            Ok(s) => {
-                let _ = fs::remove_file(&css_path);
-                eprintln!(
-                    "mdbook-catppuccin: failed to download catppuccin.css (status {})",
-                    s
-                );
-            }
-            Err(e) => eprintln!(
-                "mdbook-catppuccin: failed to download catppuccin.css: {}",
-                e
-            ),
-        }
+    if css_path.exists() {
+        return;
     }
-
-    let js_path = theme_dir.join("catppuccin.js");
-    if let Err(e) = write_if_changed(&js_path, THEME_JS) {
-        eprintln!("mdbook-catppuccin: {}", e);
-    }
-
-    let head_path = theme_dir.join("head.hbs");
-    ensure_head_hbs(&head_path);
-}
-
-fn ensure_head_hbs(path: &Path) {
-    let marker = "<!-- mdbook-catppuccin -->";
-    if path.exists() {
-        match fs::read_to_string(path) {
-            Ok(existing) => {
-                if existing.contains(marker) {
-                    return;
-                }
-                let updated = format!("{}{}", HEAD_HBS, existing);
-                if let Err(e) = write_if_changed(path, &updated) {
-                    eprintln!("mdbook-catppuccin: {}", e);
-                }
-            }
-            Err(e) => eprintln!("mdbook-catppuccin: {}", e),
+    let status = Command::new("curl")
+        .args(["-fsSL", "-o"])
+        .arg(&css_path)
+        .arg(CATPPUCCIN_CSS_URL)
+        .status();
+    match status {
+        Ok(s) if s.success() => {}
+        Ok(s) => {
+            let _ = fs::remove_file(&css_path);
+            eprintln!(
+                "mdbook-catppuccin: failed to download catppuccin.css (status {})",
+                s
+            );
         }
-    } else if let Err(e) = write_if_changed(path, HEAD_HBS) {
-        eprintln!("mdbook-catppuccin: {}", e);
+        Err(e) => eprintln!(
+            "mdbook-catppuccin: failed to download catppuccin.css: {}",
+            e
+        ),
     }
 }
 
-fn write_if_changed(path: &Path, content: &str) -> io::Result<()> {
-    if let Ok(existing) = fs::read_to_string(path) {
-        if existing == content {
-            return Ok(());
+fn process_book(book: &mut Value) {
+    if let Some(items) = book.get_mut("items").and_then(|v| v.as_array_mut()) {
+        let n = items.len();
+        for i in 0..n {
+            process_item(&mut items[i]);
         }
     }
-    fs::write(path, content)
+}
+
+fn process_item(item: &mut Value) {
+    if let Some(ch) = item.get_mut("Chapter") {
+        process_chapter(ch);
+        if let Some(subs) = ch.get_mut("sub_items").and_then(|v| v.as_array_mut()) {
+            let n = subs.len();
+            for i in 0..n {
+                process_item(&mut subs[i]);
+            }
+        }
+    }
+}
+
+fn process_chapter(ch: &mut Value) {
+    let content = ch
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if content.is_empty() || content.contains("<!-- mdbook-catppuccin -->") {
+        return;
+    }
+    ch["content"] = Value::String(format!("{}{}", THEME_SCRIPT, content));
 }
