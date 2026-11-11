@@ -8,7 +8,9 @@ use std::process::Command;
 const CATPPUCCIN_CSS_URL: &str =
     "https://github.com/catppuccin/mdBook/releases/latest/download/catppuccin.css";
 
-const THEME_JS: &str = r##"(function() {
+const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
+<script>
+(function() {
   if (window.__mdbookCatppuccinInit) return;
   window.__mdbookCatppuccinInit = true;
 
@@ -59,7 +61,10 @@ const THEME_JS: &str = r##"(function() {
         btn.className = "theme";
         btn.id = id;
         btn.textContent = labels[theme];
-        btn.addEventListener("click", function() { applyTheme(theme); });
+        btn.addEventListener("click", function(e) {
+          e.preventDefault();
+          applyTheme(theme);
+        });
         li.appendChild(btn);
         list.appendChild(li);
       })(catppuccin[i]);
@@ -81,20 +86,6 @@ const THEME_JS: &str = r##"(function() {
     init();
   }
 })();
-"##;
-
-const LOADER_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
-<script>
-(function() {
-  if (window.__mdbookCatppuccinLoader) return;
-  window.__mdbookCatppuccinLoader = true;
-  if (document.getElementById('mdbook-catppuccin-js')) return;
-  var root = (typeof path_to_root !== 'undefined') ? path_to_root : '';
-  var s = document.createElement('script');
-  s.id = 'mdbook-catppuccin-js';
-  s.src = root + 'theme/catppuccin.js';
-  document.head.appendChild(s);
-})();
 </script>
 "##;
 
@@ -113,7 +104,7 @@ fn main() {
 
     let root = ctx.get("root").and_then(|v| v.as_str()).unwrap_or("");
     if !root.is_empty() {
-        ensure_assets(root);
+        ensure_css(root);
     }
 
     process_book(&mut book);
@@ -121,7 +112,7 @@ fn main() {
     println!("{}", serde_json::to_string(&book).unwrap());
 }
 
-fn ensure_assets(root: &str) {
+fn ensure_css(root: &str) {
     let theme_dir = Path::new(root).join("theme");
     if let Err(e) = fs::create_dir_all(&theme_dir) {
         eprintln!("mdbook-catppuccin: {}", e);
@@ -129,41 +120,28 @@ fn ensure_assets(root: &str) {
     }
 
     let css_path = theme_dir.join("catppuccin.css");
-    if !css_path.exists() {
-        let status = Command::new("curl")
-            .args(["-fsSL", "-o"])
-            .arg(&css_path)
-            .arg(CATPPUCCIN_CSS_URL)
-            .status();
-        match status {
-            Ok(s) if s.success() => {}
-            Ok(s) => {
-                let _ = fs::remove_file(&css_path);
-                eprintln!(
-                    "mdbook-catppuccin: failed to download catppuccin.css (status {})",
-                    s
-                );
-            }
-            Err(e) => eprintln!(
-                "mdbook-catppuccin: failed to download catppuccin.css: {}",
-                e
-            ),
+    if css_path.exists() {
+        return;
+    }
+    let status = Command::new("curl")
+        .args(["-fsSL", "-o"])
+        .arg(&css_path)
+        .arg(CATPPUCCIN_CSS_URL)
+        .status();
+    match status {
+        Ok(s) if s.success() => {}
+        Ok(s) => {
+            let _ = fs::remove_file(&css_path);
+            eprintln!(
+                "mdbook-catppuccin: failed to download catppuccin.css (status {})",
+                s
+            );
         }
+        Err(e) => eprintln!(
+            "mdbook-catppuccin: failed to download catppuccin.css: {}",
+            e
+        ),
     }
-
-    let js_path = theme_dir.join("catppuccin.js");
-    if let Err(e) = write_if_changed(&js_path, THEME_JS) {
-        eprintln!("mdbook-catppuccin: {}", e);
-    }
-}
-
-fn write_if_changed(path: &Path, content: &str) -> io::Result<()> {
-    if let Ok(existing) = fs::read_to_string(path) {
-        if existing == content {
-            return Ok(());
-        }
-    }
-    fs::write(path, content)
 }
 
 fn process_book(book: &mut Value) {
@@ -196,5 +174,5 @@ fn process_chapter(ch: &mut Value) {
     if content.is_empty() || content.contains("<!-- mdbook-catppuccin -->") {
         return;
     }
-    ch["content"] = Value::String(format!("{}{}", LOADER_SCRIPT, content));
+    ch["content"] = Value::String(format!("{}{}", THEME_SCRIPT, content));
 }
