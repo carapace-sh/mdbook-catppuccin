@@ -23,6 +23,21 @@ const THEME_JS: &str = r##"(function() {
     };
   }
 
+  function getPopup() {
+    return document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
+  }
+
+  function getToggle() {
+    return document.getElementById("mdbook-theme-toggle") || document.getElementById("theme-toggle");
+  }
+
+  function hidePopup() {
+    var popup = getPopup();
+    var toggle = getToggle();
+    if (popup) { popup.style.display = "none"; }
+    if (toggle) { toggle.setAttribute("aria-expanded", "false"); }
+  }
+
   function applyTheme(theme) {
     var html = document.documentElement;
     var previous = null;
@@ -41,12 +56,19 @@ const THEME_JS: &str = r##"(function() {
       s.highlight.disabled = dark;
     }
 
-    var popup = document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
-    if (popup) { popup.style.display = "none"; }
+    var popup = getPopup();
+    if (popup) {
+      popup.querySelectorAll(".theme-selected").forEach(function(el) {
+        el.classList.remove("theme-selected");
+      });
+      var sel = document.getElementById("mdbook-theme-" + theme) || document.getElementById("theme-" + theme);
+      if (sel) { sel.classList.add("theme-selected"); }
+    }
+    hidePopup();
   }
 
   function addCatppuccinThemes() {
-    var list = document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
+    var list = getPopup();
     if (!list) return;
     for (var i = 0; i < catppuccin.length; i++) {
       (function(theme) {
@@ -56,6 +78,7 @@ const THEME_JS: &str = r##"(function() {
         li.setAttribute("role", "none");
         var btn = document.createElement("button");
         btn.setAttribute("role", "menuitem");
+        btn.type = "button";
         btn.className = "theme";
         btn.id = id;
         btn.textContent = labels[theme];
@@ -72,6 +95,7 @@ const THEME_JS: &str = r##"(function() {
 
   function init() {
     addCatppuccinThemes();
+
     var current = null;
     try { current = localStorage.getItem("mdbook-theme"); } catch (e) {}
     if (current && catppuccin.indexOf(current) !== -1) {
@@ -87,7 +111,9 @@ const THEME_JS: &str = r##"(function() {
 })();
 "##;
 
-const HEAD_HBS: &str = r##"<script defer src="{{ resource "theme/catppuccin.js" }}"></script>
+const HEAD_HBS: &str = r##"<!-- mdbook-catppuccin -->
+<link rel="stylesheet" href="{{ resource "theme/catppuccin.css" }}">
+<script defer src="{{ resource "theme/catppuccin.js" }}"></script>
 "##;
 
 fn main() {
@@ -151,10 +177,11 @@ fn ensure_assets(root: &str) {
 }
 
 fn ensure_head_hbs(path: &Path) {
+    let marker = "<!-- mdbook-catppuccin -->";
     if path.exists() {
         match fs::read_to_string(path) {
             Ok(existing) => {
-                if existing.contains("catppuccin.js") {
+                if existing.contains(marker) {
                     return;
                 }
                 let updated = format!("{}{}", HEAD_HBS, existing);
