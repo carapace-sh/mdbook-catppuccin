@@ -83,6 +83,21 @@ const THEME_JS: &str = r##"(function() {
 })();
 "##;
 
+const LOADER_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
+<script>
+(function() {
+  if (window.__mdbookCatppuccinLoader) return;
+  window.__mdbookCatppuccinLoader = true;
+  if (document.getElementById('mdbook-catppuccin-js')) return;
+  var root = (typeof path_to_root !== 'undefined') ? path_to_root : '';
+  var s = document.createElement('script');
+  s.id = 'mdbook-catppuccin-js';
+  s.src = root + 'theme/catppuccin.js';
+  document.head.appendChild(s);
+})();
+</script>
+"##;
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 && args[1] == "supports" {
@@ -94,14 +109,16 @@ fn main() {
     let parsed: Value = serde_json::from_str(&input).unwrap();
     let arr = parsed.as_array().unwrap();
     let ctx = &arr[0];
-    let book = &arr[1];
+    let mut book = arr[1].clone();
 
     let root = ctx.get("root").and_then(|v| v.as_str()).unwrap_or("");
     if !root.is_empty() {
         ensure_assets(root);
     }
 
-    println!("{}", serde_json::to_string(book).unwrap());
+    process_book(&mut book);
+
+    println!("{}", serde_json::to_string(&book).unwrap());
 }
 
 fn ensure_assets(root: &str) {
@@ -147,4 +164,37 @@ fn write_if_changed(path: &Path, content: &str) -> io::Result<()> {
         }
     }
     fs::write(path, content)
+}
+
+fn process_book(book: &mut Value) {
+    if let Some(items) = book.get_mut("items").and_then(|v| v.as_array_mut()) {
+        let n = items.len();
+        for i in 0..n {
+            process_item(&mut items[i]);
+        }
+    }
+}
+
+fn process_item(item: &mut Value) {
+    if let Some(ch) = item.get_mut("Chapter") {
+        process_chapter(ch);
+        if let Some(subs) = ch.get_mut("sub_items").and_then(|v| v.as_array_mut()) {
+            let n = subs.len();
+            for i in 0..n {
+                process_item(&mut subs[i]);
+            }
+        }
+    }
+}
+
+fn process_chapter(ch: &mut Value) {
+    let content = ch
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if content.is_empty() || content.contains("<!-- mdbook-catppuccin -->") {
+        return;
+    }
+    ch["content"] = Value::String(format!("{}{}", LOADER_SCRIPT, content));
 }
