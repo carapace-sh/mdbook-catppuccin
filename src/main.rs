@@ -25,6 +25,20 @@ const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
     };
   }
 
+  function getPopup() {
+    return document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
+  }
+
+  function setHighlightFor(theme) {
+    var s = getStylesheets();
+    if (!s.ayuHighlight || !s.tomorrowNight || !s.highlight) return;
+    var dark = theme === "coal" || theme === "navy" || theme === "ayu" ||
+      theme === "frappe" || theme === "macchiato" || theme === "mocha";
+    s.ayuHighlight.disabled = dark;
+    s.tomorrowNight.disabled = !dark;
+    s.highlight.disabled = dark;
+  }
+
   function applyCatppuccinTheme(theme) {
     var html = document.documentElement;
     var previous = null;
@@ -33,16 +47,9 @@ const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
     html.classList.remove("latte", "frappe", "macchiato", "mocha");
     html.classList.add(theme);
     try { localStorage.setItem("mdbook-theme", theme); } catch (e) {}
+    setHighlightFor(theme);
 
-    var s = getStylesheets();
-    if (s.ayuHighlight && s.tomorrowNight && s.highlight) {
-      var dark = theme !== "latte";
-      s.ayuHighlight.disabled = dark;
-      s.tomorrowNight.disabled = !dark;
-      s.highlight.disabled = dark;
-    }
-
-    var popup = document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
+    var popup = getPopup();
     if (popup) {
       popup.querySelectorAll(".theme-selected").forEach(function(el) {
         el.classList.remove("theme-selected");
@@ -52,11 +59,11 @@ const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
       popup.style.display = "none";
     }
     var toggle = document.getElementById("mdbook-theme-toggle");
-    if (toggle) { toggle.setAttribute("aria-expanded", "false"); }
+    if (toggle) { toggle.setAttribute("aria-expanded", "false"); try { toggle.focus(); } catch (e) {} }
   }
 
   function addCatppuccinThemes() {
-    var list = document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
+    var list = getPopup();
     if (!list) return;
     for (var i = 0; i < catppuccin.length; i++) {
       (function(theme) {
@@ -73,6 +80,7 @@ const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
         btn.addEventListener("click", function(e) {
           e.preventDefault();
           e.stopPropagation();
+          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
           applyCatppuccinTheme(theme);
         }, true);
         li.appendChild(btn);
@@ -86,15 +94,21 @@ const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
     var current = null;
     try { current = localStorage.getItem("mdbook-theme"); } catch (e) {}
     if (current && catppuccin.indexOf(current) !== -1) {
-      applyCatppuccinTheme(current);
+      // Apply after mdBook's own theme init if it ran, to fix highlight styles.
+      setTimeout(function() { applyCatppuccinTheme(current); }, 0);
     }
+
+    // Keep highlight correct if mdBook reapplies theme logic.
+    document.addEventListener("click", function() {
+      var cur = null;
+      try { cur = localStorage.getItem("mdbook-theme"); } catch (e) {}
+      if (cur && catppuccin.indexOf(cur) !== -1) {
+        setTimeout(function() { setHighlightFor(cur); }, 0);
+      }
+    }, true);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
+  init();
 })();
 </script>
 "##;
