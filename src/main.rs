@@ -16,16 +16,6 @@ const THEME_SCRIPT: &str = r##"<script>
   var catppuccin = ["latte", "frappe", "macchiato", "mocha"];
   var labels = { latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" };
 
-  function ensureCssLink() {
-    if (document.getElementById("mdbook-catppuccin-css")) return;
-    var root = (typeof path_to_root !== "undefined") ? path_to_root : "";
-    var link = document.createElement("link");
-    link.id = "mdbook-catppuccin-css";
-    link.rel = "stylesheet";
-    link.href = root + "theme/catppuccin.css";
-    document.head.appendChild(link);
-  }
-
   function getStylesheets() {
     return {
       ayuHighlight: document.querySelector("#mdbook-ayu-highlight-css"),
@@ -78,7 +68,6 @@ const THEME_SCRIPT: &str = r##"<script>
   }
 
   function init() {
-    ensureCssLink();
     addCatppuccinThemes();
     var current = null;
     try { current = localStorage.getItem("mdbook-theme"); } catch (e) {}
