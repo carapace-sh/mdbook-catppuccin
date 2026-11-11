@@ -10,7 +10,21 @@ const CATPPUCCIN_CSS_URL: &str =
 
 const INJECT_SCRIPT: &str = r##"<script>
 (function() {
+  if (window.__mdbookCatppuccinInit) return;
+  window.__mdbookCatppuccinInit = true;
+
   var catppuccin = ["latte", "frappe", "macchiato", "mocha"];
+  var labels = { latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" };
+
+  function ensureCssLink() {
+    if (document.getElementById("mdbook-catppuccin-css")) return;
+    var path = (typeof path_to_root !== "undefined" ? path_to_root : "") + "theme/catppuccin.css";
+    var link = document.createElement("link");
+    link.id = "mdbook-catppuccin-css";
+    link.rel = "stylesheet";
+    link.href = path;
+    document.head.appendChild(link);
+  }
 
   function getStylesheets() {
     return {
@@ -31,15 +45,10 @@ const INJECT_SCRIPT: &str = r##"<script>
 
     var stylesheets = getStylesheets();
     if (stylesheets.ayuHighlight && stylesheets.tomorrowNight && stylesheets.highlight) {
-      if (theme === "coal" || theme === "navy" || theme === "ayu" || (catppuccin.indexOf(theme) !== -1 && theme !== "latte")) {
-        stylesheets.ayuHighlight.disabled = true;
-        stylesheets.tomorrowNight.disabled = false;
-        stylesheets.highlight.disabled = true;
-      } else {
-        stylesheets.ayuHighlight.disabled = false;
-        stylesheets.tomorrowNight.disabled = true;
-        stylesheets.highlight.disabled = false;
-      }
+      var dark = theme === "coal" || theme === "navy" || theme === "ayu" || (catppuccin.indexOf(theme) !== -1 && theme !== "latte");
+      stylesheets.ayuHighlight.disabled = dark;
+      stylesheets.tomorrowNight.disabled = !dark;
+      stylesheets.highlight.disabled = dark;
     }
 
     var popup = document.getElementById("mdbook-theme-list");
@@ -49,7 +58,6 @@ const INJECT_SCRIPT: &str = r##"<script>
   function addCatppuccinThemes() {
     var list = document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
     if (!list) return;
-    var labels = { latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" };
     for (var i = 0; i < catppuccin.length; i++) {
       (function(theme) {
         var id = "mdbook-theme-" + theme;
@@ -69,6 +77,7 @@ const INJECT_SCRIPT: &str = r##"<script>
   }
 
   function init() {
+    ensureCssLink();
     addCatppuccinThemes();
     var current = null;
     try { current = localStorage.getItem("mdbook-theme"); } catch (e) {}
@@ -172,28 +181,5 @@ fn process_chapter(ch: &mut Value) {
     if content.contains("<!-- mdbook-catppuccin -->") {
         return;
     }
-
-    let source_path = ch
-        .get("source_path")
-        .and_then(|v| v.as_str())
-        .or_else(|| ch.get("path").and_then(|v| v.as_str()))
-        .unwrap_or("");
-    let css_href = css_href_for(source_path);
-
-    ch["content"] = Value::String(format!(
-        "<!-- mdbook-catppuccin -->\n<link rel=\"stylesheet\" href=\"{}\">\n{}\n{}",
-        css_href, INJECT_SCRIPT, content
-    ));
-}
-
-fn css_href_for(source_path: &str) -> String {
-    if source_path.is_empty() {
-        return "theme/catppuccin.css".to_string();
-    }
-    let depth = source_path
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .count()
-        .saturating_sub(1);
-    format!("{}theme/catppuccin.css", "../".repeat(depth))
+    ch["content"] = Value::String(format!("<!-- mdbook-catppuccin -->\n{}\n{}", INJECT_SCRIPT, content));
 }
