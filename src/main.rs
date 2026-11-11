@@ -8,9 +8,7 @@ use std::process::Command;
 const CATPPUCCIN_CSS_URL: &str =
     "https://github.com/catppuccin/mdBook/releases/latest/download/catppuccin.css";
 
-const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
-<script>
-(function() {
+const THEME_JS: &str = r##"(function() {
   if (window.__mdbookCatppuccinInit) return;
   window.__mdbookCatppuccinInit = true;
 
@@ -63,6 +61,7 @@ const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
         btn.textContent = labels[theme];
         btn.addEventListener("click", function(e) {
           e.preventDefault();
+          e.stopPropagation();
           applyTheme(theme);
         });
         li.appendChild(btn);
@@ -86,7 +85,9 @@ const THEME_SCRIPT: &str = r##"<!-- mdbook-catppuccin -->
     init();
   }
 })();
-</script>
+"##;
+
+const HEAD_HBS: &str = r##"<script defer src="{{ resource "theme/catppuccin.js" }}"></script>
 "##;
 
 fn main() {
@@ -100,19 +101,17 @@ fn main() {
     let parsed: Value = serde_json::from_str(&input).unwrap();
     let arr = parsed.as_array().unwrap();
     let ctx = &arr[0];
-    let mut book = arr[1].clone();
+    let book = &arr[1];
 
     let root = ctx.get("root").and_then(|v| v.as_str()).unwrap_or("");
     if !root.is_empty() {
-        ensure_css(root);
+        ensure_assets(root);
     }
 
-    process_book(&mut book);
-
-    println!("{}", serde_json::to_string(&book).unwrap());
+    println!("{}", serde_json::to_string(book).unwrap());
 }
 
-fn ensure_css(root: &str) {
+fn ensure_assets(root: &str) {
     let theme_dir = Path::new(root).join("theme");
     if let Err(e) = fs::create_dir_all(&theme_dir) {
         eprintln!("mdbook-catppuccin: {}", e);
@@ -120,59 +119,61 @@ fn ensure_css(root: &str) {
     }
 
     let css_path = theme_dir.join("catppuccin.css");
-    if css_path.exists() {
-        return;
-    }
-    let status = Command::new("curl")
-        .args(["-fsSL", "-o"])
-        .arg(&css_path)
-        .arg(CATPPUCCIN_CSS_URL)
-        .status();
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => {
-            let _ = fs::remove_file(&css_path);
-            eprintln!(
-                "mdbook-catppuccin: failed to download catppuccin.css (status {})",
-                s
-            );
-        }
-        Err(e) => eprintln!(
-            "mdbook-catppuccin: failed to download catppuccin.css: {}",
-            e
-        ),
-    }
-}
-
-fn process_book(book: &mut Value) {
-    if let Some(items) = book.get_mut("items").and_then(|v| v.as_array_mut()) {
-        let n = items.len();
-        for i in 0..n {
-            process_item(&mut items[i]);
-        }
-    }
-}
-
-fn process_item(item: &mut Value) {
-    if let Some(ch) = item.get_mut("Chapter") {
-        process_chapter(ch);
-        if let Some(subs) = ch.get_mut("sub_items").and_then(|v| v.as_array_mut()) {
-            let n = subs.len();
-            for i in 0..n {
-                process_item(&mut subs[i]);
+    if !css_path.exists() {
+        let status = Command::new("curl")
+            .args(["-fsSL", "-o"])
+            .arg(&css_path)
+            .arg(CATPPUCCIN_CSS_URL)
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                let _ = fs::remove_file(&css_path);
+                eprintln!(
+                    "mdbook-catppuccin: failed to download catppuccin.css (status {})",
+                    s
+                );
             }
+            Err(e) => eprintln!(
+                "mdbook-catppuccin: failed to download catppuccin.css: {}",
+                e
+            ),
         }
+    }
+
+    let js_path = theme_dir.join("catppuccin.js");
+    if let Err(e) = write_if_changed(&js_path, THEME_JS) {
+        eprintln!("mdbook-catppuccin: {}", e);
+    }
+
+    let head_path = theme_dir.join("head.hbs");
+    ensure_head_hbs(&head_path);
+}
+
+fn ensure_head_hbs(path: &Path) {
+    if path.exists() {
+        match fs::read_to_string(path) {
+            Ok(existing) => {
+                if existing.contains("catppuccin.js") {
+                    return;
+                }
+                let updated = format!("{}{}", HEAD_HBS, existing);
+                if let Err(e) = write_if_changed(path, &updated) {
+                    eprintln!("mdbook-catppuccin: {}", e);
+                }
+            }
+            Err(e) => eprintln!("mdbook-catppuccin: {}", e),
+        }
+    } else if let Err(e) = write_if_changed(path, HEAD_HBS) {
+        eprintln!("mdbook-catppuccin: {}", e);
     }
 }
 
-fn process_chapter(ch: &mut Value) {
-    let content = ch
-        .get("content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    if content.is_empty() || content.contains("<!-- mdbook-catppuccin -->") {
-        return;
+fn write_if_changed(path: &Path, content: &str) -> io::Result<()> {
+    if let Ok(existing) = fs::read_to_string(path) {
+        if existing == content {
+            return Ok(());
+        }
     }
-    ch["content"] = Value::String(format!("{}{}", THEME_SCRIPT, content));
+    fs::write(path, content)
 }
