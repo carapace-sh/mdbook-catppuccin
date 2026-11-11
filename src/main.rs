@@ -8,38 +8,82 @@ use std::process::Command;
 const CATPPUCCIN_CSS_URL: &str =
     "https://github.com/catppuccin/mdBook/releases/latest/download/catppuccin.css";
 
-const INJECT_SCRIPT: &str = r#"<script>
+const INJECT_SCRIPT: &str = r##"<script>
 (function() {
+  var catppuccin = ["latte", "frappe", "macchiato", "mocha"];
+
+  function getStylesheets() {
+    return {
+      ayuHighlight: document.querySelector("#mdbook-ayu-highlight-css"),
+      tomorrowNight: document.querySelector("#mdbook-tomorrow-night-css"),
+      highlight: document.querySelector("#mdbook-highlight-css"),
+    };
+  }
+
+  function applyTheme(theme) {
+    var html = document.documentElement;
+    var previous = null;
+    try { previous = localStorage.getItem("mdbook-theme"); } catch (e) {}
+    if (previous) { html.classList.remove(previous); }
+    html.classList.remove("latte", "frappe", "macchiato", "mocha");
+    html.classList.add(theme);
+    try { localStorage.setItem("mdbook-theme", theme); } catch (e) {}
+
+    var stylesheets = getStylesheets();
+    if (stylesheets.ayuHighlight && stylesheets.tomorrowNight && stylesheets.highlight) {
+      if (theme === "coal" || theme === "navy" || theme === "ayu" || (catppuccin.indexOf(theme) !== -1 && theme !== "latte")) {
+        stylesheets.ayuHighlight.disabled = true;
+        stylesheets.tomorrowNight.disabled = false;
+        stylesheets.highlight.disabled = true;
+      } else {
+        stylesheets.ayuHighlight.disabled = false;
+        stylesheets.tomorrowNight.disabled = true;
+        stylesheets.highlight.disabled = false;
+      }
+    }
+
+    var popup = document.getElementById("mdbook-theme-list");
+    if (popup) { popup.style.display = "none"; }
+  }
+
   function addCatppuccinThemes() {
     var list = document.getElementById("mdbook-theme-list") || document.getElementById("theme-list");
     if (!list) return;
-    var themes = [
-      ["latte", "Latte"],
-      ["frappe", "Frappé"],
-      ["macchiato", "Macchiato"],
-      ["mocha", "Mocha"]
-    ];
-    for (var i = 0; i < themes.length; i++) {
-      var id = "mdbook-theme-" + themes[i][0];
-      if (document.getElementById(id)) continue;
-      var li = document.createElement("li");
-      li.setAttribute("role", "none");
-      var btn = document.createElement("button");
-      btn.setAttribute("role", "menuitem");
-      btn.className = "theme";
-      btn.id = id;
-      btn.textContent = themes[i][1];
-      li.appendChild(btn);
-      list.appendChild(li);
+    var labels = { latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" };
+    for (var i = 0; i < catppuccin.length; i++) {
+      (function(theme) {
+        var id = "mdbook-theme-" + theme;
+        if (document.getElementById(id)) return;
+        var li = document.createElement("li");
+        li.setAttribute("role", "none");
+        var btn = document.createElement("button");
+        btn.setAttribute("role", "menuitem");
+        btn.className = "theme";
+        btn.id = id;
+        btn.textContent = labels[theme];
+        btn.addEventListener("click", function() { applyTheme(theme); });
+        li.appendChild(btn);
+        list.appendChild(li);
+      })(catppuccin[i]);
     }
   }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", addCatppuccinThemes);
-  } else {
+
+  function init() {
     addCatppuccinThemes();
+    var current = null;
+    try { current = localStorage.getItem("mdbook-theme"); } catch (e) {}
+    if (current && catppuccin.indexOf(current) !== -1) {
+      applyTheme(current);
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
 })();
-</script>"#;
+</script>"##;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
