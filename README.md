@@ -18,3 +18,10 @@ Add to `book.toml`:
 default-theme = "Latte"
 preferred-dark-theme = "Mocha"
 ```
+
+Optionally also add the stylesheet via `additional-css`:
+
+```toml
+[output.html]
+additional-css = ["./theme/catppuccin.css"]
+```
